@@ -91,3 +91,6 @@ de control
 | 4. Capa Analítica | Data Mart | Consolidación de los datos organizados específicamente para responder a las consultas del negocio. |
 | 5. Explotación / BI (Opcional) | Power BI | Conexión opcional al Data Mart para la visualización gráfica de los resultados y la creación de tableros de control. |
 ### 7. Arquitectura propuesta
+### Diagrama de Arquitectura
+
+![Diagrama de arquitectura del proyecto](IMG_0737.jpg)
