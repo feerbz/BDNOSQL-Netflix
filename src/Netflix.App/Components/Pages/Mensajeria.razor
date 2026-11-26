@@ -1,0 +1,179 @@
+@page "/mensajeria"
+@implements IDisposable
+@inject LiveEvents Live
+@inject DemoPublisher Demo
+@inject ISnackbar Snackbar
+@inject IConfiguration Config
+
+<PageTitle>Mensajería · Netflix Analytics</PageTitle>
+<MudText Typo="Typo.h4" Class="mb-4">Mensajería</MudText>
+
+<MudPaper Class="pa-4 mb-4">
+    <div class="flow">
+        <div class="node"><b>ETL</b><br />Python</div>
+        <span class="arrow">→</span>
+        <div class="node"><b>netflix.catalog</b><br />exchange topic</div>
+        <span class="arrow">→</span>
+        <div class="flow-column">
+            @foreach (var queue in Live.Queues)
+            {
+                var isError = queue.Name.EndsWith("_error");
+                if (!isError || queue.Ready > 0 || queue.Name.StartsWith(MessagingSetup.TitlesQueue))
+                {
+                    <div class="node @(isError ? "node-error" : "")">
+                        <b>@queue.Name</b> @(isError && queue.Ready > 0 ? "⚠" : "")<br />
+                        en espera <b>@queue.Ready.ToString("N0")</b>
+                        @if (!isError)
+                        {
+                            <span> · en proceso @queue.Unacked · consumidores @queue.Consumers</span>
+                        }
+                    </div>
+                }
+            }
+        </div>
+        <span class="arrow">→</span>
+        <div class="node"><b>Netflix.App</b><br />consumidores</div>
+        <span class="arrow">→</span>
+        <div class="node"><b>Cassandra</b><br />netflix_mart</div>
+    </div>
+</MudPaper>
+
+<MudGrid>
+    <MudItem xs="12" md="6">
+        <MudPaper Class="pa-4">
+            <MudText Typo="Typo.h6">Mensajes por segundo (últimos 60 s)</MudText>
+            <ApexChart @ref="_chart" TItem="RateSample" Options="_options" Height="@("230")">
+                <ApexPointSeries TItem="RateSample" Items="_rates" Name="Publicados" SeriesType="SeriesType.Line"
+                                 XValue="@(r => r.At.ToString("HH:mm:ss"))" YValue="@(r => (decimal)r.Published)" />
+                <ApexPointSeries TItem="RateSample" Items="_rates" Name="Entregados" SeriesType="SeriesType.Line"
+                                 XValue="@(r => r.At.ToString("HH:mm:ss"))" YValue="@(r => (decimal)r.Delivered)" />
+            </ApexChart>
+            <MudText Typo="Typo.h6" Class="mt-2">Progreso de la carga</MudText>
+            <MudProgressLinear Value="Progress" Size="Size.Large" Color="Color.Primary" Class="my-2" />
+            <MudText Typo="Typo.body2">
+                @(Live.TotalTitles == 0
+                    ? "Sin carga en curso."
+                    : $"{Live.Position:N0} de {Live.TotalTitles:N0} títulos ({Progress:0}%)")
+            </MudText>
+        </MudPaper>
+    </MudItem>
+    <MudItem xs="12" md="6">
+        <MudPaper Class="pa-4">
+            <MudText Typo="Typo.h6">Eventos (últimos @LiveEvents.FeedSize)</MudText>
+            <div class="feed">
+                @foreach (var e in Live.Feed)
+                {
+                    <div class="feed-row">
+                        <span>@e.At.ToString("HH:mm:ss")</span>
+                        <span>@(e.Id ?? "(sin id)")</span>
+                        <span title="@e.Reason">@e.Title</span>
+                        @switch (e.Status)
+                        {
+                            case TitleStatus.Nuevo:
+                                <span class="ok">✔ nuevo @($"{e.Milliseconds:0} ms")</span>
+                                break;
+                            case TitleStatus.YaExistia:
+                                <span class="dup">↺ ya existía @($"{e.Milliseconds:0} ms")</span>
+                                break;
+                            default:
+                                <span class="bad">✖ error</span>
+                                break;
+                        }
+                    </div>
+                    @if (e.Status == TitleStatus.Error)
+                    {
+                        <div class="bad">↳ @e.Reason</div>
+                    }
+                }
+                @if (Live.Feed.Count == 0)
+                {
+                    <MudText Typo="Typo.body2">Aún no hay eventos: ejecuta <code>docker compose run --rm etl --rate 60</code></MudText>
+                }
+            </div>
+        </MudPaper>
+    </MudItem>
+</MudGrid>
+
+<MudStack Row="true" Class="mt-4" Spacing="3" AlignItems="AlignItems.Center">
+    <MudButton Variant="Variant.Filled" Color="Color.Error" StartIcon="@Icons.Material.Filled.Dangerous"
+               OnClick="InjectCorrupt">Inyectar corrupto</MudButton>
+    <MudButton Variant="Variant.Filled" Color="Color.Secondary" StartIcon="@Icons.Material.Filled.ContentCopy"
+               OnClick="Resend" Disabled="@(Live.LastTitle is null)">Reenviar duplicado</MudButton>
+    <MudLink Href="@(Config["RabbitMq:ManagementUrl"] ?? "http://localhost:15672")" Target="_blank">Abrir RabbitMQ ↗</MudLink>
+    @if (Live.LastTitle is null)
+    {
+        <MudText Typo="Typo.caption">"Reenviar duplicado" se activa al recibir el primer título.</MudText>
+    }
+</MudStack>
+
+@code {
+    private readonly CancellationTokenSource _stop = new();
+    private readonly ApexChartOptions<RateSample> _options = AppTheme.Chart<RateSample>();
+    private ApexChart<RateSample>? _chart;
+    private List<RateSample> _rates = [];
+    private volatile bool _dirty;
+
+    private double Progress => Live.TotalTitles == 0 ? 0 : 100d * Live.Position / Live.TotalTitles;
+
+    protected override void OnInitialized()
+    {
+        _options.Chart.Animations = new Animations { Enabled = false };
+        _options.Stroke = new Stroke { Width = 2, Curve = Curve.Smooth };
+        _options.Xaxis = new XAxis { TickAmount = 6 };
+        _rates = [.. Live.Rates];
+        Live.Changed += MarkDirty;
+        _ = RefreshLoop();
+    }
+
+    private void MarkDirty() => _dirty = true;
+
+    /// <summary>Como máximo 4 redibujos por segundo, aunque lleguen miles de eventos.</summary>
+    private async Task RefreshLoop()
+    {
+        using var timer = new PeriodicTimer(TimeSpan.FromMilliseconds(250));
+        try
+        {
+            while (await timer.WaitForNextTickAsync(_stop.Token))
+            {
+                if (!_dirty) continue;
+                _dirty = false;
+                await InvokeAsync(async () =>
+                {
+                    var rates = Live.Rates;
+                    var newSample = rates.LastOrDefault() != _rates.LastOrDefault();
+                    if (newSample) _rates = [.. rates];
+                    StateHasChanged();
+                    if (newSample && _chart is not null) await _chart.UpdateSeriesAsync(false);
+                });
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // La vista se cerró.
+        }
+    }
+
+    private Task InjectCorrupt() => Publish(Demo.InjectCorruptAsync, "Mensaje corrupto enviado");
+
+    private Task Resend() => Publish(() => Demo.ResendAsync(Live.LastTitle!), "Duplicado reenviado");
+
+    private async Task Publish(Func<Task> action, string done)
+    {
+        try
+        {
+            await action();
+            Snackbar.Add(done, Severity.Info);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"No se pudo publicar: {ex.Message}", Severity.Error);
+        }
+    }
+
+    public void Dispose()
+    {
+        Live.Changed -= MarkDirty;
+        _stop.Cancel();
+        _stop.Dispose();
+    }
+}

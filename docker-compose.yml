@@ -1,0 +1,80 @@
+name: netflix-analytics
+
+# Los límites de `cpus` son para un portátil de 2 CPU (ver README).
+services:
+  cassandra:
+    cpus: 1.0
+    image: cassandra:5.0
+    environment:
+      MAX_HEAP_SIZE: 1G
+      HEAP_NEWSIZE: 200M
+    ports:
+      - "9042:9042"
+    volumes:
+      - cassandra_data:/var/lib/cassandra
+    healthcheck:
+      test: ["CMD", "cqlsh", "-e", "DESCRIBE KEYSPACES"]
+      interval: 10s
+      timeout: 20s
+      retries: 30
+      start_period: 90s
+
+  cassandra-init:
+    cpus: 0.5
+    image: cassandra:5.0
+    entrypoint: ["cqlsh", "cassandra", "-f", "/schema.cql"]
+    volumes:
+      - ./cassandra/schema.cql:/schema.cql:ro
+    depends_on:
+      cassandra:
+        condition: service_healthy
+
+  rabbitmq:
+    cpus: 0.5
+    image: rabbitmq:4-management
+    # Nombre fijo: RabbitMQ guarda sus colas bajo el nombre del nodo.
+    hostname: rabbitmq
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+      - ./rabbitmq/rabbitmq.conf:/etc/rabbitmq/conf.d/20-netflix.conf:ro
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "check_port_connectivity"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+
+  app:
+    cpus: 0.5
+    build: ./src/Netflix.App
+    environment:
+      Cassandra__Host: cassandra
+      RabbitMq__Host: rabbitmq
+      ASPNETCORE_HTTP_PORTS: "8080"
+      TZ: America/Mexico_City   # hora local en el feed y la gráfica
+    ports:
+      - "${APP_PORT:-8080}:8080"
+    depends_on:
+      cassandra-init:
+        condition: service_completed_successfully
+      rabbitmq:
+        condition: service_healthy
+
+  etl:
+    cpus: 0.5
+    build: ./etl
+    profiles: [tools]
+    environment:
+      DATA_DIR: /data
+      RABBITMQ_HOST: rabbitmq
+    volumes:
+      - ./archive:/data:ro
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+
+volumes:
+  cassandra_data:
+  rabbitmq_data:

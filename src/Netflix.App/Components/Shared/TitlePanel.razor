@@ -1,0 +1,44 @@
+@* Detalle de un título: se obtiene con una sola lectura de titles_by_id. *@
+<MudStack Spacing="2" Class="pa-4">
+    <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center">
+        <MudText Typo="Typo.h5">@Title.Title</MudText>
+        <MudIconButton Icon="@Icons.Material.Filled.Close" OnClick="OnClose" />
+    </MudStack>
+    <MudText Typo="Typo.body2">
+        @AppTheme.TypeName(Title.Type) · @Title.ReleaseYear · @Title.AgeCertification · @Length
+    </MudText>
+    <MudText Typo="Typo.body1">@Title.Description</MudText>
+    <MudStack Row="true" Spacing="4">
+        <MudText><b>IMDb</b> @AppTheme.Score(Title.ImdbScore) (@(Title.ImdbVotes?.ToString("N0") ?? "0") votos)</MudText>
+        <MudText><b>TMDB</b> @AppTheme.Score(Title.TmdbScore)</MudText>
+        <MudText><b>Popularidad</b> @(Title.TmdbPopularity?.ToString("N1") ?? "—")</MudText>
+    </MudStack>
+    <div>
+        @foreach (var genre in Title.Genres)
+        {
+            <MudChip T="string" Size="Size.Small">@genre</MudChip>
+        }
+    </div>
+    <MudText Typo="Typo.body2">Países: @(Title.ProductionCountries.Count > 0 ? string.Join(", ", Title.ProductionCountries) : "—")</MudText>
+    <MudText Typo="Typo.h6">Reparto (@Title.Credits.Count)</MudText>
+    <MudSimpleTable Dense="true">
+        <tbody>
+            @foreach (var credit in Title.Credits)
+            {
+                <tr>
+                    <td>@credit.Name</td>
+                    <td>@(credit.Role == "DIRECTOR" ? "Dirección" : credit.Character)</td>
+                </tr>
+            }
+        </tbody>
+    </MudSimpleTable>
+</MudStack>
+
+@code {
+    [Parameter, EditorRequired] public TitleMessage Title { get; set; } = null!;
+    [Parameter] public EventCallback OnClose { get; set; }
+
+    private string Length => Title.Type == "SHOW"
+        ? $"{Title.Seasons} temporada(s)"
+        : Title.Runtime is { } minutes ? $"{minutes} min" : "duración desconocida";
+}

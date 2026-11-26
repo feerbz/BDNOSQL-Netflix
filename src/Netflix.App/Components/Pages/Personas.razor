@@ -1,0 +1,81 @@
+@page "/personas"
+@inject DashboardQueries Queries
+
+<PageTitle>Personas · Netflix Analytics</PageTitle>
+<MudText Typo="Typo.h4" Class="mb-4">Personas · Top 50</MudText>
+
+<MudToggleGroup T="string" Value="_role" ValueChanged="@(v => Load(v!))" Color="Color.Primary" Class="mb-3">
+    <MudToggleItem Value="@("ACTOR")">Actores</MudToggleItem>
+    <MudToggleItem Value="@("DIRECTOR")">Directores</MudToggleItem>
+</MudToggleGroup>
+
+<DataState Loading="_loading" Empty="_people.Count == 0">
+    <MudGrid>
+        <MudItem xs="12" md="5">
+            <MudSimpleTable Dense="true" Hover="true">
+                <thead><tr><th>#</th><th>Nombre</th><th>Títulos</th></tr></thead>
+                <tbody>
+                    @foreach (var person in _people)
+                    {
+                        <tr class="clickable" @onclick="() => Select(person)">
+                            <td>@person.Position</td>
+                            <td>@person.Name</td>
+                            <td>@person.Total</td>
+                        </tr>
+                    }
+                </tbody>
+            </MudSimpleTable>
+        </MudItem>
+        <MudItem xs="12" md="7">
+            <MudPaper Class="pa-4" Style="position: sticky; top: 16px; max-height: 90vh; overflow-y: auto;">
+                @if (_selected is null)
+                {
+                    <MudText>Selecciona una persona para ver su filmografía.</MudText>
+                }
+                else
+                {
+                    <MudText Typo="Typo.h6">Filmografía de @_selected.Name</MudText>
+                    <MudSimpleTable Dense="true">
+                        <thead><tr><th>Año</th><th>Título</th><th>Tipo</th><th>Rol</th><th>Personaje</th><th>IMDb</th></tr></thead>
+                        <tbody>
+                            @foreach (var film in _films)
+                            {
+                                <tr>
+                                    <td>@film.Year</td>
+                                    <td>@film.Title</td>
+                                    <td>@AppTheme.TypeName(film.Type)</td>
+                                    <td>@AppTheme.RoleName(film.Role)</td>
+                                    <td>@film.Character</td>
+                                    <td>@AppTheme.Score(film.ImdbScore)</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </MudSimpleTable>
+                }
+            </MudPaper>
+        </MudItem>
+    </MudGrid>
+</DataState>
+
+@code {
+    private bool _loading = true;
+    private string _role = "ACTOR";
+    private IReadOnlyList<PersonEntry> _people = [];
+    private IReadOnlyList<Film> _films = [];
+    private PersonEntry? _selected;
+
+    protected override Task OnInitializedAsync() => Load(_role);
+
+    private async Task Load(string role)
+    {
+        (_role, _loading, _selected) = (role, true, null);
+        _people = await Queries.TopPeopleAsync(role);
+        _loading = false;
+    }
+
+    private async Task Select(PersonEntry person)
+    {
+        _films = await Queries.FilmographyAsync(person.PersonId);
+        _selected = person;
+    }
+}

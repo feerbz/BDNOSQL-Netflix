@@ -1,0 +1,60 @@
+@page "/ranking"
+@inject DashboardQueries Queries
+
+<PageTitle>Ranking · Netflix Analytics</PageTitle>
+<MudText Typo="Typo.h4" Class="mb-4">Ranking · Top 50</MudText>
+
+<MudStack Row="true" Spacing="4" Class="mb-3" AlignItems="AlignItems.Center">
+    <MudToggleGroup T="string" Value="_metric" ValueChanged="@(v => Load(v!, _kind))" Color="Color.Primary">
+        <MudToggleItem Value="@("imdb")">IMDb</MudToggleItem>
+        <MudToggleItem Value="@("popularity")">Popularidad</MudToggleItem>
+    </MudToggleGroup>
+    <MudToggleGroup T="string" Value="_kind" ValueChanged="@(v => Load(_metric, v!))" Color="Color.Primary">
+        <MudToggleItem Value="@("all")">Todos</MudToggleItem>
+        <MudToggleItem Value="@("movie")">Películas</MudToggleItem>
+        <MudToggleItem Value="@("show")">Series</MudToggleItem>
+    </MudToggleGroup>
+</MudStack>
+
+@if (_metric == "imdb")
+{
+    <MudText Typo="Typo.caption">Solo títulos con al menos 1,000 votos en IMDb.</MudText>
+}
+
+<DataState Loading="_loading" Empty="_rows.Count == 0">
+    <MudText Typo="Typo.caption">@_rows.Count elementos</MudText>
+    <MudSimpleTable Dense="true" Hover="true">
+        <thead>
+            <tr><th>#</th><th>Título</th><th>Tipo</th><th>Año</th><th>IMDb</th><th>Votos</th><th>Popularidad</th></tr>
+        </thead>
+        <tbody>
+            @foreach (var row in _rows)
+            {
+                <tr>
+                    <td><b>@row.Position</b></td>
+                    <td>@row.Title</td>
+                    <td>@AppTheme.TypeName(row.Type)</td>
+                    <td>@row.Year</td>
+                    <td>@AppTheme.Score(row.ImdbScore)</td>
+                    <td>@(row.ImdbVotes?.ToString("N0") ?? "—")</td>
+                    <td>@(row.Popularity?.ToString("N1") ?? "—")</td>
+                </tr>
+            }
+        </tbody>
+    </MudSimpleTable>
+</DataState>
+
+@code {
+    private bool _loading = true;
+    private string _metric = "imdb", _kind = "all";
+    private IReadOnlyList<RankingEntry> _rows = [];
+
+    protected override Task OnInitializedAsync() => Load(_metric, _kind);
+
+    private async Task Load(string metric, string kind)
+    {
+        (_metric, _kind, _loading) = (metric, kind, true);
+        _rows = await Queries.RankingAsync($"{metric}_{kind}");
+        _loading = false;
+    }
+}

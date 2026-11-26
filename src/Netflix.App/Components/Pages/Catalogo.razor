@@ -1,0 +1,85 @@
+@page "/catalogo"
+@inject DashboardQueries Queries
+
+<PageTitle>Catálogo · Netflix Analytics</PageTitle>
+<MudText Typo="Typo.h4" Class="mb-4">Catálogo</MudText>
+
+<DataState Loading="_loading" Empty="_all.Count == 0">
+    <MudGrid Class="mb-2">
+        <MudItem xs="12" sm="6">
+            <MudTextField T="string" Value="_text" ValueChanged="@(v => { _text = v; Apply(); })" Label="Buscar por nombre"
+                          Immediate="true" DebounceInterval="250" Adornment="Adornment.Start"
+                          AdornmentIcon="@Icons.Material.Filled.Search" Variant="Variant.Outlined" />
+        </MudItem>
+        <MudItem xs="6" sm="3">
+            <MudSelect T="string" Value="_type" ValueChanged="@(v => { _type = v; Apply(); })" Label="Tipo" Variant="Variant.Outlined">
+                <MudSelectItem T="string" Value="@("")">Todos</MudSelectItem>
+                <MudSelectItem T="string" Value="@("MOVIE")">Películas</MudSelectItem>
+                <MudSelectItem T="string" Value="@("SHOW")">Series</MudSelectItem>
+            </MudSelect>
+        </MudItem>
+        <MudItem xs="6" sm="3">
+            <MudSelect T="string" Value="_genre" ValueChanged="@(v => { _genre = v; Apply(); })" Label="Género" Variant="Variant.Outlined">
+                <MudSelectItem T="string" Value="@("")">Todos</MudSelectItem>
+                @foreach (var genre in _genres)
+                {
+                    <MudSelectItem T="string" Value="@genre">@genre</MudSelectItem>
+                }
+            </MudSelect>
+        </MudItem>
+    </MudGrid>
+
+    <MudText Typo="Typo.caption">@_filtered.Count.ToString("N0") títulos</MudText>
+    <MudTable T="CatalogItem" Items="_filtered" Dense="true" Hover="true" RowClass="clickable" OnRowClick="Open">
+        <HeaderContent>
+            <MudTh>Título</MudTh>
+            <MudTh>Tipo</MudTh>
+            <MudTh>Año</MudTh>
+            <MudTh>Géneros</MudTh>
+            <MudTh><MudTableSortLabel T="CatalogItem" SortBy="@(i => i.ImdbScore ?? -1)">IMDb</MudTableSortLabel></MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd>@context.Title</MudTd>
+            <MudTd>@AppTheme.TypeName(context.Type)</MudTd>
+            <MudTd>@context.Year</MudTd>
+            <MudTd>@string.Join(", ", context.Genres)</MudTd>
+            <MudTd>@AppTheme.Score(context.ImdbScore)</MudTd>
+        </RowTemplate>
+        <PagerContent>
+            <MudTablePager PageSizeOptions="new[] { 10, 25, 50 }" RowsPerPageString="Filas por página" />
+        </PagerContent>
+    </MudTable>
+</DataState>
+
+<MudDrawer @bind-Open="_panelOpen" Anchor="Anchor.End" Variant="DrawerVariant.Temporary" Width="480px">
+    @if (_detail is not null)
+    {
+        <div class="panel">
+            <TitlePanel Title="_detail" OnClose="@(() => _panelOpen = false)" />
+        </div>
+    }
+</MudDrawer>
+
+@code {
+    private bool _loading = true, _panelOpen;
+    private IReadOnlyList<CatalogItem> _all = [], _filtered = [];
+    private List<string> _genres = [];
+    private string _text = "", _type = "", _genre = "";
+    private TitleMessage? _detail;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _all = await Queries.CatalogAsync();
+        _genres = _all.SelectMany(i => i.Genres).Distinct().Order().ToList();
+        Apply();
+        _loading = false;
+    }
+
+    private void Apply() => _filtered = DashboardQueries.Filter(_all, _text, _type, _genre);
+
+    private async Task Open(TableRowClickEventArgs<CatalogItem> row)
+    {
+        _detail = await Queries.TitleAsync(row.Item!.Id);
+        _panelOpen = _detail is not null;
+    }
+}

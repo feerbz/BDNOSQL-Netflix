@@ -1,0 +1,143 @@
+@page "/"
+@inject DashboardQueries Queries
+
+<PageTitle>Resumen · Netflix Analytics</PageTitle>
+<MudText Typo="Typo.h4" Class="mb-4">Resumen</MudText>
+
+<DataState Loading="_loading" Empty="_kpis is null">
+    <MudGrid>
+        <MudItem xs="12">
+            <div class="kpis">
+                @foreach (var (label, value) in Cards)
+                {
+                    <MudPaper Class="pa-4 kpi">
+                        <MudText Typo="Typo.h4">@value</MudText>
+                        <MudText Typo="Typo.body2">@label</MudText>
+                    </MudPaper>
+                }
+            </div>
+        </MudItem>
+        <MudItem xs="12" md="7">
+            <MudPaper Class="pa-4">
+                <MudText Typo="Typo.h6">Estrenos por año</MudText>
+                <ApexChart TItem="YearTotal" Options="_yearOptions" Height="@("320")">
+                    <ApexPointSeries TItem="YearTotal" Items="_movieYears" Name="Películas" SeriesType="SeriesType.Area"
+                                     XValue="@(y => y.Year.ToString())" YValue="@(y => y.Total)" />
+                    <ApexPointSeries TItem="YearTotal" Items="_showYears" Name="Series" SeriesType="SeriesType.Area"
+                                     XValue="@(y => y.Year.ToString())" YValue="@(y => y.Total)" />
+                </ApexChart>
+            </MudPaper>
+        </MudItem>
+        <MudItem xs="12" md="5">
+            <MudPaper Class="pa-4">
+                <MudText Typo="Typo.h6">Top géneros <MudText Inline="true" Typo="Typo.caption">(clic para ver títulos)</MudText></MudText>
+                <ApexChart TItem="GenreTotal" Options="_genreOptions" Height="@("320")" OnDataPointSelection="OnGenreSelected">
+                    <ApexPointSeries TItem="GenreTotal" Items="_genres" Name="Películas" SeriesType="SeriesType.Bar"
+                                     XValue="@(g => g.Genre)" YValue="@(g => g.Movies)" />
+                    <ApexPointSeries TItem="GenreTotal" Items="_genres" Name="Series" SeriesType="SeriesType.Bar"
+                                     XValue="@(g => g.Genre)" YValue="@(g => g.Shows)" />
+                </ApexChart>
+            </MudPaper>
+        </MudItem>
+        <MudItem xs="12" md="7">
+            <MudPaper Class="pa-4">
+                <MudText Typo="Typo.h6">Top 10 países</MudText>
+                <ApexChart TItem="CountryTotal" Options="_countryOptions" Height="@("320")">
+                    <ApexPointSeries TItem="CountryTotal" Items="_countries" Name="Películas" SeriesType="SeriesType.Bar"
+                                     XValue="@(c => c.Country)" YValue="@(c => c.Movies)" />
+                    <ApexPointSeries TItem="CountryTotal" Items="_countries" Name="Series" SeriesType="SeriesType.Bar"
+                                     XValue="@(c => c.Country)" YValue="@(c => c.Shows)" />
+                </ApexChart>
+            </MudPaper>
+        </MudItem>
+        <MudItem xs="12" md="5">
+            <MudPaper Class="pa-4">
+                <MudText Typo="Typo.h6">Películas vs. Series</MudText>
+                <ApexChart TItem="Slice" Options="_donutOptions" Height="@("320")">
+                    <ApexPointSeries TItem="Slice" Items="_slices" Name="Títulos" SeriesType="SeriesType.Donut"
+                                     XValue="@(s => s.Label)" YValue="@(s => s.Total)" />
+                </ApexChart>
+            </MudPaper>
+        </MudItem>
+    </MudGrid>
+</DataState>
+
+<MudDrawer @bind-Open="_panelOpen" Anchor="Anchor.End" Variant="DrawerVariant.Temporary" Width="420px">
+    <MudStack Class="pa-4 panel">
+        <MudText Typo="Typo.h6">Mejores títulos de @_genre</MudText>
+        <MudSimpleTable Dense="true">
+            <tbody>
+                @foreach (var title in _genreTitles)
+                {
+                    <tr>
+                        <td>@title.Title (@title.Year)</td>
+                        <td>@AppTheme.TypeName(title.Type)</td>
+                        <td><b>@AppTheme.Score(title.ImdbScore)</b></td>
+                    </tr>
+                }
+            </tbody>
+        </MudSimpleTable>
+    </MudStack>
+</MudDrawer>
+
+@code {
+    private sealed record Slice(string Label, int Total);
+
+    private bool _loading = true, _panelOpen;
+    private Kpis? _kpis;
+    private List<YearTotal> _movieYears = [], _showYears = [];
+    private List<GenreTotal> _genres = [];
+    private List<CountryTotal> _countries = [];
+    private List<Slice> _slices = [];
+    private IReadOnlyList<GenreTitle> _genreTitles = [];
+    private string _genre = "";
+
+    private readonly ApexChartOptions<YearTotal> _yearOptions = AppTheme.Chart<YearTotal>();
+    private readonly ApexChartOptions<GenreTotal> _genreOptions = AppTheme.Chart<GenreTotal>(horizontal: true, stacked: true);
+    private readonly ApexChartOptions<CountryTotal> _countryOptions = AppTheme.Chart<CountryTotal>(horizontal: true, stacked: true);
+    private readonly ApexChartOptions<Slice> _donutOptions = AppTheme.Chart<Slice>();
+
+    private IEnumerable<(string, string)> Cards => _kpis is null ? [] :
+    [
+        ("Títulos", _kpis.Titles.ToString("N0")), ("Películas", _kpis.Movies.ToString("N0")),
+        ("Series", _kpis.Shows.ToString("N0")), ("IMDb promedio", _kpis.AvgImdb.ToString("0.0")),
+        ("Personas", _kpis.People.ToString("N0")),
+    ];
+
+    protected override async Task OnInitializedAsync()
+    {
+        _yearOptions.Xaxis = new XAxis { TickAmount = 12 };
+        _yearOptions.Stroke = new Stroke { Curve = Curve.Smooth, Width = 2 };
+
+        _kpis = await Queries.KpisAsync();
+        if (_kpis is not null)
+        {
+            var movies = await Queries.ByYearAsync("MOVIE");
+            var shows = await Queries.ByYearAsync("SHOW");
+            _movieYears = FillYears("MOVIE", movies, movies.Concat(shows));
+            _showYears = FillYears("SHOW", shows, movies.Concat(shows));
+            _genres = (await Queries.ByGenreAsync()).Take(10).ToList();
+            _countries = (await Queries.ByCountryAsync()).Take(10).ToList();
+            _slices = [new("Películas", _kpis.Movies), new("Series", _kpis.Shows)];
+        }
+        _loading = false;
+    }
+
+    /// <summary>Las dos series necesitan los mismos años en el eje X.</summary>
+    private static List<YearTotal> FillYears(string type, IReadOnlyList<YearTotal> data, IEnumerable<YearTotal> all)
+    {
+        var years = all.Select(y => y.Year).ToList();
+        if (years.Count == 0) return [];
+        var totals = data.ToDictionary(y => y.Year, y => y.Total);
+        return Enumerable.Range(years.Min(), years.Max() - years.Min() + 1)
+            .Select(year => new YearTotal(type, year, totals.GetValueOrDefault(year))).ToList();
+    }
+
+    private async Task OnGenreSelected(SelectedData<GenreTotal> selected)
+    {
+        _genre = selected.DataPoint.Items.First().Genre;
+        _genreTitles = await Queries.TitlesByGenreAsync(_genre);
+        _panelOpen = true;
+        StateHasChanged();
+    }
+}

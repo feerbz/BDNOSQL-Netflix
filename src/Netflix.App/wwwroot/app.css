@@ -1,0 +1,26 @@
+body { font-family: 'Inter', system-ui, sans-serif; background: #141414; }
+.mud-typography { font-family: 'Inter', system-ui, sans-serif; }
+.brand { font-weight: 700; font-size: 1.05rem !important; }
+.mud-main-content { padding-top: 0 !important; }
+.brand-n { color: #E50914; font-size: 1.5rem; margin-right: 4px; }
+.kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; }
+.kpi { text-align: center; }
+.clickable { cursor: pointer; }
+.panel { width: 100%; overflow-y: auto; }
+
+.flow { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.flow-column { display: flex; flex-direction: column; gap: 8px; }
+.node { border: 1px solid #555; border-radius: 8px; padding: 8px 14px; min-width: 110px; }
+.node-error { border-color: #FF5252; }
+.arrow { color: #888; font-size: 1.4rem; }
+.feed { max-height: 360px; overflow-y: auto; font-family: ui-monospace, monospace; font-size: 0.82rem; }
+.feed-row { display: grid; grid-template-columns: 70px 100px 1fr auto; gap: 8px; padding: 2px 0; border-bottom: 1px solid #2c2c2c; }
+.ok { color: #46D369; }
+.dup { color: #F5C518; }
+.bad { color: #FF5252; }
+
+#blazor-error-ui {
+    background: #5c1a1a; bottom: 0; display: none; left: 0; padding: 0.6rem 1.25rem;
+    position: fixed; width: 100%; z-index: 2000;
+}
+#blazor-error-ui .dismiss { cursor: pointer; position: absolute; right: 0.75rem; top: 0.5rem; }
